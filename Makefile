@@ -1,3 +1,8 @@
+dependencies: nose
+
+nose:
+	@python -c 'import nose' 2>/dev/null || pip install nose
+
 clean:
 	@echo "Cleaning up build and *.pyc files..."
 	@find . -name '*.pyc' -exec rm -rf {} \;
@@ -8,23 +13,22 @@ clean:
 	@rm -rf `pwd`/test_data
 	@echo "Done!"
 
-test: clean
+test: clean dependencies
 	@echo "Running all tests..."
 	@mkdir `pwd`/test_data
 	@export PYTHONPATH=`pwd`:`pwd`/staticgenerator::$$PYTHONPATH && \
 		nosetests -d -s --verbose --with-coverage --cover-inclusive --cover-package=staticgenerator \
 			staticgenerator/tests
 
-unit: clean
+unit: clean dependencies
 	@echo "Running unit tests..."
 	@export PYTHONPATH=`pwd`:`pwd`/staticgenerator::$$PYTHONPATH && \
 		nosetests -d -s --verbose --with-coverage --cover-inclusive --cover-package=staticgenerator \
 			staticgenerator/tests/unit
 	
-functional: clean
+functional: clean dependencies
 	@echo "Running unit tests..."
 	@mkdir `pwd`/test_data
 	@export PYTHONPATH=`pwd`:`pwd`/staticgenerator::$$PYTHONPATH && \
 		nosetests -d -s --verbose --with-coverage --cover-inclusive --cover-package=staticgenerator \
 			staticgenerator/tests/functional
-	
