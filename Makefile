@@ -1,4 +1,7 @@
-dependencies: nose django mox
+dependencies: nose django mox coverage
+
+coverage:
+	@python -c 'import coverage' 2>/dev/null || pip install coverage
 
 mox:
 	@python -c 'import mox' 2>/dev/null || pip install mox
