@@ -1,7 +1,10 @@
-dependencies: nose
+dependencies: nose django
 
 nose:
 	@python -c 'import nose' 2>/dev/null || pip install nose
+
+django:
+	@python -c 'import django' 2>/dev/null || pip install django
 
 clean:
 	@echo "Cleaning up build and *.pyc files..."
