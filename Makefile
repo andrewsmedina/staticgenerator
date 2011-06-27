@@ -1,4 +1,7 @@
-dependencies: nose django
+dependencies: nose django mox
+
+mox:
+	@python -c 'import mox' 2>/dev/null || pip install mox
 
 nose:
 	@python -c 'import nose' 2>/dev/null || pip install nose
