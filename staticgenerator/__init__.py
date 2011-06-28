@@ -2,16 +2,22 @@
 #-*- coding:utf-8 -*-
 
 """Static file generator for Django."""
-import stat
-
 from django.utils.functional import Promise
-
-from filesystem import FileSystem
+from django.http import HttpRequest
+from django.db.models.base import ModelBase
+from django.db.models.manager import Manager
+from django.db.models import Model
+from django.db.models.query import QuerySet
+from django.conf import settings
 from handlers import DummyHandler
+
+import stat
+import os
 
 
 class StaticGeneratorException(Exception):
     pass
+
 
 class StaticGenerator(object):
     """
@@ -46,54 +52,12 @@ class StaticGenerator(object):
         self.server_name = self.get_server_name()
 
         try:
-            self.web_root = getattr(self.settings, 'WEB_ROOT')
+            self.web_root = getattr(settings, 'WEB_ROOT')
         except AttributeError:
             raise StaticGeneratorException('You must specify WEB_ROOT in settings.py')
 
     def parse_dependencies(self, kw):
-        http_request = kw.get('http_request', None)
-        model_base = kw.get('model_base', None)
-        manager = kw.get('manager', None)
-        model = kw.get('model', None)
-        queryset = kw.get('queryset', None)
-        settings = kw.get('settings', None)
         site = kw.get('site', None)
-        fs = kw.get('fs', None)
-        
-        self.http_request = http_request
-        if not http_request:
-            from django.http import HttpRequest
-            self.http_request = HttpRequest
-
-        self.model_base = model_base
-        if not model_base:
-            from django.db.models.base import ModelBase
-            self.model_base = ModelBase
-
-        self.manager = manager
-        if not manager:
-            from django.db.models.manager import Manager
-            self.manager = Manager
-
-        self.model = model
-        if not model:
-            from django.db.models import Model
-            self.model = Model
-
-        self.queryset = queryset
-        if not queryset:
-            from django.db.models.query import QuerySet
-            self.queryset = QuerySet
-
-        self.settings = settings
-        if not settings:
-            from django.conf import settings
-            self.settings = settings
-
-        self.fs = fs
-        if not fs:
-            self.fs = FileSystem()
-
         self.site = site
 
     def extract_resources(self, resources):
@@ -108,20 +72,20 @@ class StaticGenerator(object):
                 continue
 
             # A model instance; requires get_absolute_url method
-            if isinstance(resource, self.model):
+            if isinstance(resource, Model):
                 extracted.append(resource.get_absolute_url())
                 continue
 
             # If it's a Model, we get the base Manager
-            if isinstance(resource, self.model_base):
+            if isinstance(resource, ModelBase):
                 resource = resource._default_manager
 
             # If it's a Manager, we get the QuerySet
-            if isinstance(resource, self.manager):
+            if isinstance(resource, Manager):
                 resource = resource.all()
 
             # Append all paths from obj.get_absolute_url() to list
-            if isinstance(resource, self.queryset):
+            if isinstance(resource, QuerySet):
                 extracted += [obj.get_absolute_url() for obj in resource]
 
         return extracted
@@ -133,7 +97,7 @@ class StaticGenerator(object):
         Otherwise, return "localhost".
         '''
         try:
-            return getattr(self.settings, 'SERVER_NAME')
+            return getattr(settings, 'SERVER_NAME')
         except:
             pass
 
@@ -152,7 +116,7 @@ class StaticGenerator(object):
         resulting output (HTML, XML, whatever)
         """
 
-        request = self.http_request()
+        request = HttpRequest()
         request.path_info = path
         request.META.setdefault('SERVER_PORT', 80)
         request.META.setdefault('SERVER_NAME', self.server_name)
@@ -176,8 +140,8 @@ class StaticGenerator(object):
         if path.endswith('/'):
             path = '%sindex.html' % path
 
-        filename = self.fs.join(self.web_root, path.lstrip('/')).encode('utf-8')
-        return filename, self.fs.dirname(filename)
+        filename = os.path.join(self.web_root, path.lstrip('/')).encode('utf-8')
+        return filename, os.path.dirname(filename)
 
     def publish_from_path(self, path, content=None):
         """
@@ -188,18 +152,18 @@ class StaticGenerator(object):
         if not content:
             content = self.get_content_from_path(path)
 
-        if not self.fs.exists(directory):
+        if not os.exists(directory):
             try:
-                self.fs.makedirs(directory)
+                os.makedirs(directory)
             except:
                 raise StaticGeneratorException('Could not create the directory: %s' % directory)
 
         try:
-            f, tmpname = self.fs.tempfile(directory=directory)
-            self.fs.write(f, content)
-            self.fs.close(f)
-            self.fs.chmod(tmpname, stat.S_IREAD | stat.S_IWRITE | stat.S_IWUSR | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-            self.fs.rename(tmpname, filename)
+            f, tmpname = os.tempfile(directory=directory)
+            os.write(f, content)
+            os.close(f)
+            os.chmod(tmpname, stat.S_IREAD | stat.S_IWRITE | stat.S_IWUSR | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+            os.rename(tmpname, filename)
         except:
             raise StaticGeneratorException('Could not create the file: %s' % filename)
 
@@ -207,13 +171,13 @@ class StaticGenerator(object):
         """Deletes file, attempts to delete directory"""
         filename, directory = self.get_filename_from_path(path)
         try:
-            if self.fs.exists(filename):
-                self.fs.remove(filename)
+            if os.exists(filename):
+                os.remove(filename)
         except:
             raise StaticGeneratorException('Could not delete file: %s' % filename)
 
         try:
-            self.fs.rmdir(directory)
+            os.rmdir(directory)
         except OSError:
             # Will fail if a directory is not empty, in which case we don't 
             # want to delete it anyway
