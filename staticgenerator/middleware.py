@@ -5,14 +5,13 @@ from staticgenerator import StaticGenerator
 class StaticGeneratorMiddleware(object):
     """
     This requires settings.STATIC_GENERATOR_URLS tuple to match on URLs
-    
+
     Example::
-        
+
         STATIC_GENERATOR_URLS = (
             r'^/$',
             r'^/blog',
         )
-        
     """
     urls = tuple([re.compile(url) for url in settings.STATIC_GENERATOR_URLS])
     gen = StaticGenerator()

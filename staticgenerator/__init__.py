@@ -13,6 +13,7 @@ from handlers import DummyHandler
 
 import stat
 import os
+import tempfile
 
 
 class StaticGeneratorException(Exception):
@@ -152,14 +153,14 @@ class StaticGenerator(object):
         if not content:
             content = self.get_content_from_path(path)
 
-        if not os.exists(directory):
+        if not os.path.exists(directory):
             try:
                 os.makedirs(directory)
             except:
                 raise StaticGeneratorException('Could not create the directory: %s' % directory)
 
         try:
-            f, tmpname = os.tempfile(directory=directory)
+            f, tmpname = tempfile.mkstemp(dir=directory)
             os.write(f, content)
             os.close(f)
             os.chmod(tmpname, stat.S_IREAD | stat.S_IWRITE | stat.S_IWUSR | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
@@ -171,7 +172,7 @@ class StaticGenerator(object):
         """Deletes file, attempts to delete directory"""
         filename, directory = self.get_filename_from_path(path)
         try:
-            if os.exists(filename):
+            if os.path.exists(filename):
                 os.remove(filename)
         except:
             raise StaticGeneratorException('Could not delete file: %s' % filename)
