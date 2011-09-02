@@ -15,7 +15,7 @@ class StaticGeneratorMiddleware(object):
     """
     urls = tuple([re.compile(url) for url in settings.STATIC_GENERATOR_URLS])
     gen = StaticGenerator()
-    
+
     def process_response(self, request, response):
         if response.status_code == 200:
             for url in self.urls:
