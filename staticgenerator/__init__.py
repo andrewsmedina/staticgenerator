@@ -9,6 +9,7 @@ from django.db.models.manager import Manager
 from django.db.models import Model
 from django.db.models.query import QuerySet
 from django.conf import settings
+from django.test.client import RequestFactory
 from handlers import DummyHandler
 
 import stat
@@ -116,8 +117,7 @@ class StaticGenerator(object):
         Imitates a basic http request using DummyHandler to retrieve
         resulting output (HTML, XML, whatever)
         """
-
-        request = HttpRequest()
+        request = RequestFactory().get(path)
         request.path_info = path
         request.META.setdefault('SERVER_PORT', 80)
         request.META.setdefault('SERVER_NAME', self.server_name)
