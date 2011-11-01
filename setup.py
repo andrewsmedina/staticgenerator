@@ -1,6 +1,7 @@
-from distutils.core import setup
+#from distutils.core import setup
+from setuptools import setup
 
-version = '1.4.1'
+version = '1.5.0'
 
 setup(name='staticgenerator',
       version=version,
