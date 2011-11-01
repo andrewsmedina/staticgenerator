@@ -2,6 +2,7 @@
 #-*- coding:utf-8 -*-
 
 from django.core.handlers.base import BaseHandler
+from django.middleware.transaction import TransactionMiddleware
 
 class DummyHandler(BaseHandler):
     """Required to process request and response middleware"""
@@ -10,6 +11,6 @@ class DummyHandler(BaseHandler):
         self.load_middleware()
         response = self.get_response(request)
         for middleware_method in self._response_middleware:
-            response = middleware_method(request, response)
-
+            if not isinstance(middleware_method.im_self, TransactionMiddleware):
+                response = middleware_method(request, response)
         return response
