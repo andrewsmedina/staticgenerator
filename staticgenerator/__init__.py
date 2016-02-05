@@ -31,8 +31,8 @@ class StaticGenerator(object):
         from staticgenerator import quick_publish
         quick_publish('/', Post.objects.live(), FlatPage)
 
-    The class accepts a list of 'resources' which can be any of the 
-    following: URL path (string), Model (class or instance), Manager, or 
+    The class accepts a list of 'resources' which can be any of the
+    following: URL path (string), Model (class or instance), Manager, or
     QuerySet.
 
     As of v1.1, StaticGenerator includes file and path deletion::
@@ -146,7 +146,7 @@ class StaticGenerator(object):
 
     def publish_from_path(self, path, content=None):
         """
-        Gets filename and content for a path, attempts to create directory if 
+        Gets filename and content for a path, attempts to create directory if
         necessary, writes to file.
         """
         filename, directory = self.get_filename_from_path(path)
@@ -180,7 +180,7 @@ class StaticGenerator(object):
         try:
             os.rmdir(directory)
         except OSError:
-            # Will fail if a directory is not empty, in which case we don't 
+            # Will fail if a directory is not empty, in which case we don't
             # want to delete it anyway
             pass
 
