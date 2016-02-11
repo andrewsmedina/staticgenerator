@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-#-*- coding:utf-8 -*-
+# -*- coding:utf-8 -*-
 
 """Static file generator for Django."""
 from django.utils.functional import Promise
-from django.http import HttpRequest
 from django.db.models.base import ModelBase
 from django.db.models.manager import Manager
 from django.db.models import Model
@@ -193,8 +192,10 @@ class StaticGenerator(object):
     def publish(self):
         return self.do_all(self.publish_from_path)
 
+
 def quick_publish(*resources):
     return StaticGenerator(*resources).publish()
+
 
 def quick_delete(*resources):
     return StaticGenerator(*resources).delete()
