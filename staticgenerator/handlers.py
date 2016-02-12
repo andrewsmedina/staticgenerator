@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-#-*- coding:utf-8 -*-
+# -*- coding:utf-8 -*-
 
 from django.core.handlers.base import BaseHandler
 from django.middleware.transaction import TransactionMiddleware
+
 
 class DummyHandler(BaseHandler):
     """Required to process request and response middleware"""
