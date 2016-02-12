@@ -1,6 +1,11 @@
+# Files
 *~
 *.pyc
 *.swp
 .coverage
 test_data
+
+# Directories
 *.egg-info/
+foo/
+.ropeproject/

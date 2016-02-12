@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-#-*- coding:utf-8 -*-
+# -*- coding:utf-8 -*-
 
 """Static file generator for Django."""
 from django.utils.functional import Promise
-from django.http import HttpRequest
 from django.db.models.base import ModelBase
 from django.db.models.manager import Manager
 from django.db.models import Model
@@ -31,8 +30,8 @@ class StaticGenerator(object):
         from staticgenerator import quick_publish
         quick_publish('/', Post.objects.live(), FlatPage)
 
-    The class accepts a list of 'resources' which can be any of the 
-    following: URL path (string), Model (class or instance), Manager, or 
+    The class accepts a list of 'resources' which can be any of the
+    following: URL path (string), Model (class or instance), Manager, or
     QuerySet.
 
     As of v1.1, StaticGenerator includes file and path deletion::
@@ -51,16 +50,24 @@ class StaticGenerator(object):
         self.parse_dependencies(kw)
 
         self.resources = self.extract_resources(resources)
-        self.server_name = self.get_server_name()
-
-        try:
-            self.web_root = getattr(settings, 'WEB_ROOT')
-        except AttributeError:
-            raise StaticGeneratorException('You must specify WEB_ROOT in settings.py')
+        self.server_name = self.get_server_name(kw)
+        self.web_root = self.get_web_root(kw)
 
     def parse_dependencies(self, kw):
         site = kw.get('site', None)
         self.site = site
+
+    def get_web_root(self, kw):
+        try:
+            return getattr(settings, 'WEB_ROOT')
+        except AttributeError:
+            web_root = kw['settings'].WEB_ROOT if kw.has_key('settings') and \
+                hasattr(kw['settings'], 'WEB_ROOT') else None
+
+            if not web_root:
+                raise StaticGeneratorException('You must specify WEB_ROOT in settings.py')
+
+            return web_root
 
     def extract_resources(self, resources):
         """Takes a list of resources, and gets paths by type"""
@@ -92,7 +99,7 @@ class StaticGenerator(object):
 
         return extracted
 
-    def get_server_name(self):
+    def get_server_name(self, kw={}):
         '''Tries to get the server name.
         First we look in the django settings.
         If it's not found we try to get it from the current Site.
@@ -109,8 +116,14 @@ class StaticGenerator(object):
                 self.site = Site
             return self.site.objects.get_current().domain
         except:
-            print '*** Warning ***: Using "localhost" for domain name. Use django.contrib.sites or set settings.SERVER_NAME to disable this warning.'
-            return 'localhost'
+            server_name = kw['settings'].SERVER_NAME if kw.has_key('settings') and \
+                hasattr(kw['settings'], 'SERVER_NAME') else None
+
+            if not server_name:
+                print '*** Warning ***: Using "localhost" for domain name. Use django.contrib.sites or set settings.SERVER_NAME to disable this warning.'
+                return 'localhost'
+
+            return server_name
 
     def get_content_from_path(self, path):
         """
@@ -146,7 +159,7 @@ class StaticGenerator(object):
 
     def publish_from_path(self, path, content=None):
         """
-        Gets filename and content for a path, attempts to create directory if 
+        Gets filename and content for a path, attempts to create directory if
         necessary, writes to file.
         """
         filename, directory = self.get_filename_from_path(path)
@@ -180,7 +193,7 @@ class StaticGenerator(object):
         try:
             os.rmdir(directory)
         except OSError:
-            # Will fail if a directory is not empty, in which case we don't 
+            # Will fail if a directory is not empty, in which case we don't
             # want to delete it anyway
             pass
 
@@ -193,8 +206,10 @@ class StaticGenerator(object):
     def publish(self):
         return self.do_all(self.publish_from_path)
 
+
 def quick_publish(*resources):
     return StaticGenerator(*resources).publish()
+
 
 def quick_delete(*resources):
     return StaticGenerator(*resources).delete()
