@@ -50,16 +50,23 @@ class StaticGenerator(object):
         self.parse_dependencies(kw)
 
         self.resources = self.extract_resources(resources)
-        self.server_name = self.get_server_name()
-
-        try:
-            self.web_root = getattr(settings, 'WEB_ROOT')
-        except AttributeError:
-            raise StaticGeneratorException('You must specify WEB_ROOT in settings.py')
+        self.web_root = self.get_web_root(kw)
 
     def parse_dependencies(self, kw):
         site = kw.get('site', None)
         self.site = site
+
+    def get_web_root(self, kw):
+        try:
+            return getattr(settings, 'WEB_ROOT')
+        except AttributeError:
+            web_root = kw['settings'].WEB_ROOT if kw.has_key('settings') and \
+                hasattr(kw['settings'], 'WEB_ROOT') else None
+
+            if not web_root:
+                raise StaticGeneratorException('You must specify WEB_ROOT in settings.py')
+
+            return web_root
 
     def extract_resources(self, resources):
         """Takes a list of resources, and gets paths by type"""

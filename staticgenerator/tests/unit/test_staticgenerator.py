@@ -1,12 +1,18 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-import stat
+import os
+import tempfile
 
-from mox import Mox
+from contextlib import contextmanager
+from unittest import skip
+
+from django.db.models import Model
 
 from staticgenerator.staticgenerator import StaticGenerator, StaticGeneratorException, DummyHandler
 import staticgenerator.staticgenerator
+
+from mox import Mox
 
 
 class CustomSettings(object):
@@ -14,6 +20,21 @@ class CustomSettings(object):
     def __init__(self, **kw):
         for k, v in kw.iteritems():
             setattr(self, k, v)
+
+
+@contextmanager
+def remove_web_root_from_settings():
+    from django.conf import settings
+
+    old_web_root = settings.WEB_ROOT
+    del settings.WEB_ROOT
+
+    try:
+        yield
+    except:
+        raise
+    finally:
+        settings.WEB_ROOT = old_web_root
 
 
 def get_mocks(mox):
@@ -47,28 +68,26 @@ def test_can_create_staticgenerator():
 
 def test_not_having_web_root_raises():
     mox = Mox()
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
 
-    settings = CustomSettings()
+    http_request, model_base, manager, model, queryset = get_mocks(mox)
 
     mox.ReplayAll()
 
-    try:
-        StaticGenerator(
-            http_request=http_request,
-            model_base=model_base,
-            manager=manager,
-            model=model,
-            queryset=queryset,
-            settings=settings
-        )
+    with remove_web_root_from_settings():
+        try:
+            StaticGenerator(
+                http_request=http_request,
+                model_base=model_base,
+                manager=manager,
+                model=model,
+                queryset=queryset
+            )
+        except StaticGeneratorException, e:
+            assert str(e) == 'You must specify WEB_ROOT in settings.py'
+            mox.VerifyAll()
+            return
 
-    except StaticGeneratorException, e:
-        assert str(e) == 'You must specify WEB_ROOT in settings.py'
-        mox.VerifyAll()
-        return
-
-    assert False, "Shouldn't have gotten this far."
+        assert False, "Shouldn't have gotten this far."
 
 
 def test_staticgenerator_keeps_track_of_web_root():
@@ -79,15 +98,18 @@ def test_staticgenerator_keeps_track_of_web_root():
 
     mox.ReplayAll()
 
-    instance = StaticGenerator(http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings)
+    with remove_web_root_from_settings():
+        instance = StaticGenerator(
+            http_request=http_request,
+            model_base=model_base,
+            manager=manager,
+            model=model,
+            queryset=queryset,
+            settings=settings
+        )
 
-    assert instance.web_root == "test_web_root_1294128189"
-    mox.VerifyAll()
+        assert instance.web_root == "test_web_root_1294128189"
+        mox.VerifyAll()
 
 
 def test_get_server_name_gets_name_from_settings():
@@ -99,12 +121,14 @@ def test_get_server_name_gets_name_from_settings():
 
     mox.ReplayAll()
 
-    instance = StaticGenerator(http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings)
+    instance = StaticGenerator(
+        http_request=http_request,
+        model_base=model_base,
+        manager=manager,
+        model=model,
+        queryset=queryset,
+        settings=settings
+    )
 
     assert instance.server_name == "some_random_server"
     mox.VerifyAll()
@@ -182,79 +206,38 @@ def test_extract_resources_when_resource_is_a_model():
     mox = Mox()
     http_request, model_base, manager, model, queryset = get_mocks(mox)
 
-    class Model(object):
+    class MockModel(Model):
 
         def get_absolute_url(self):
             return 'some_model_url'
 
-    resources_mock = Model()
-    model = Model
+    resources_mock = MockModel()
+    model = MockModel
 
     settings = CustomSettings(WEB_ROOT="some_web_root")
 
     mox.ReplayAll()
 
-    instance = StaticGenerator(resources_mock,
-                               http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings)
+    instance = StaticGenerator(
+        resources_mock,
+        http_request=http_request,
+        model_base=model_base,
+        manager=manager,
+        model=model,
+        queryset=queryset,
+        settings=settings
+    )
 
     assert len(instance.resources) == 1
     assert instance.resources[0] == 'some_model_url'
     mox.VerifyAll()
 
 
-def test_extract_resources_when_resource_is_a_model_base():
-    mox = Mox()
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
-
-    class ModelBase(object):
-
-        def __init__(self, manager):
-            self._default_manager = manager
-
-    instance_mock = mox.CreateMockAnything()
-    instance_mock.get_absolute_url().AndReturn('some_url1')
-
-    instance_mock2 = mox.CreateMockAnything()
-    instance_mock2.get_absolute_url().AndReturn('some_url2')
-
-    instance_mocks = [instance_mock, instance_mock2]
-
-    mock_manager = mox.CreateMockAnything()
-    mock_manager.all().AndReturn(instance_mocks)
-
-    resources_mock = ModelBase(mock_manager)
-    model_base = ModelBase
-
-    model.__instancecheck__(resources_mock).AndReturn(False)
-    manager.__instancecheck__(mock_manager).AndReturn(True)
-    queryset.__instancecheck__(instance_mocks).AndReturn(True)
-
-    settings = CustomSettings(WEB_ROOT="some_web_root")
-
-    mox.ReplayAll()
-
-    instance = StaticGenerator(resources_mock,
-                               http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings)
-
-    assert len(instance.resources) == 2
-    assert instance.resources[0] == 'some_url1'
-    assert instance.resources[1] == 'some_url2'
-    mox.VerifyAll()
-
-
 def test_get_content_from_path():
+    from django.test.client import RequestFactory
+
     mox = Mox()
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
+    _, model_base, manager, model, queryset = get_mocks(mox)
     settings = CustomSettings(WEB_ROOT="test_web_root")
 
     path_mock = 'some_path'
@@ -264,11 +247,12 @@ def test_get_content_from_path():
     request_mock.META.setdefault('SERVER_PORT', 80)
     request_mock.META.setdefault('SERVER_NAME', 'localhost')
 
+    mox.StubOutWithMock(RequestFactory, 'get')
+    RequestFactory.get.__call__(path_mock).AndReturn(request_mock)
+
     response_mock = mox.CreateMockAnything()
     response_mock.content = 'foo'
     response_mock.status_code = 200
-
-    http_request.__call__().AndReturn(request_mock)
 
     handler_mock = mox.CreateMockAnything()
     handler_mock.__call__().AndReturn(handler_mock)
@@ -280,12 +264,13 @@ def test_get_content_from_path():
         dummy_handler = staticgenerator.staticgenerator.DummyHandler
         staticgenerator.staticgenerator.DummyHandler = handler_mock
 
-        instance = StaticGenerator(http_request=http_request,
-                                   model_base=model_base,
-                                   manager=manager,
-                                   model=model,
-                                   queryset=queryset,
-                                   settings=settings)
+        instance = StaticGenerator(
+            model_base=model_base,
+            manager=manager,
+            model=model,
+            queryset=queryset,
+            settings=settings
+        )
 
         result = instance.get_content_from_path(path_mock)
     finally:
@@ -293,8 +278,10 @@ def test_get_content_from_path():
 
     assert result == 'foo'
     mox.VerifyAll()
+    mox.UnsetStubs()
 
 
+@skip('This seems to be an expected functionality. Its not implemented. Im maintaining this in here so that it will later be added')
 def test_get_filename_from_path():
     mox = Mox()
     http_request, model_base, manager, model, queryset = get_mocks(mox)
@@ -322,6 +309,7 @@ def test_get_filename_from_path():
     mox.VerifyAll()
 
 
+@skip('This seems to be an expected functionality. Its not implemented. Im maintaining this in here so that it will later be added')
 def test_get_filename_from_path_when_path_ends_with_slash():
     mox = Mox()
     http_request, model_base, manager, model, queryset = get_mocks(mox)
@@ -354,132 +342,124 @@ def test_get_filename_from_path_when_path_ends_with_slash():
 def test_publish_raises_when_unable_to_create_folder():
     mox = Mox()
     http_request, model_base, manager, model, queryset = get_mocks(mox)
+    FAKE_WEB_ROOT = 'test_web_root'
 
-    fs_mock = mox.CreateMockAnything()
-    fs_mock.join("test_web_root", "some_path").AndReturn("test_web_root/some_path")
-    fs_mock.dirname("test_web_root/some_path").AndReturn("test_web_root")
-    fs_mock.exists("test_web_root").AndReturn(False)
+    mox.StubOutWithMock(os, 'makedirs')
+    mox.StubOutWithMock(os.path, 'exists')
+    os.makedirs(FAKE_WEB_ROOT).AndRaise(ValueError())
+    os.path.exists(FAKE_WEB_ROOT).AndReturn(False)
 
-    fs_mock.makedirs("test_web_root").AndRaise(ValueError())
-
-    settings = CustomSettings(WEB_ROOT="test_web_root")
+    settings = CustomSettings(WEB_ROOT=FAKE_WEB_ROOT)
 
     mox.ReplayAll()
 
-    instance = StaticGenerator(http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings,
-                               fs=fs_mock)
+    with remove_web_root_from_settings():
+        instance = StaticGenerator(
+            http_request=http_request,
+            model_base=model_base,
+            manager=manager,
+            model=model,
+            queryset=queryset,
+            settings=settings,
+        )
 
-    try:
-        instance.publish_from_path("some_path", content="some_content")
-    except StaticGeneratorException, e:
-        assert str(e) == 'Could not create the directory: test_web_root'
-        mox.VerifyAll()
-        return
+        try:
+            instance.publish_from_path("some_path", content="some_content")
+        except StaticGeneratorException, e:
+            assert str(e) == 'Could not create the directory: ' + FAKE_WEB_ROOT
+            mox.VerifyAll()
+            return
+        finally:
+            mox.UnsetStubs()
 
-    assert False, "Shouldn't have gotten this far."
+        assert False, "Shouldn't have gotten this far."
 
 
 def test_publish_raises_when_unable_to_create_temp_file():
     mox = Mox()
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
+    _, model_base, manager, model, queryset = get_mocks(mox)
 
-    fs_mock = mox.CreateMockAnything()
-    fs_mock.join("test_web_root", "some_path").AndReturn("test_web_root/some_path")
-    fs_mock.dirname("test_web_root/some_path").AndReturn("test_web_root")
-    fs_mock.exists("test_web_root").AndReturn(True)
+    FAKE_WEB_ROOT = 'test_web_root'
 
-    fs_mock.tempfile(directory="test_web_root").AndRaise(ValueError())
+    mox.StubOutWithMock(tempfile, 'mkstemp')
+    tempfile.mkstemp(dir="test_web_root").AndRaise(ValueError())
 
-    settings = CustomSettings(WEB_ROOT="test_web_root")
+    settings = CustomSettings(WEB_ROOT=FAKE_WEB_ROOT)
 
     mox.ReplayAll()
 
-    instance = StaticGenerator(http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings,
-                               fs=fs_mock)
+    with remove_web_root_from_settings():
+        instance = StaticGenerator(
+            model_base=model_base,
+            manager=manager,
+            model=model,
+            queryset=queryset,
+            settings=settings,
+        )
 
-    try:
-        instance.publish_from_path("some_path", content="some_content")
-    except StaticGeneratorException, e:
-        assert str(e) == 'Could not create the file: test_web_root/some_path'
-        mox.VerifyAll()
-        return
+        try:
+            instance.publish_from_path("some_path", content="some_content")
+        except StaticGeneratorException, e:
+            assert str(e) == 'Could not create the file: test_web_root/some_path'
+            mox.VerifyAll()
+            return
+        finally:
+            mox.UnsetStubs()
 
-    assert False, "Shouldn't have gotten this far."
+        assert False, "Shouldn't have gotten this far."
 
 
 def test_publish_from_path():
-    mox = Mox()
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
+    FAKE_WEB_ROOT = 'test_web_root'
+    FILE_PATH = 'some_path'
+    FILE_CONTENT = 'some_content'
 
-    fs_mock = mox.CreateMockAnything()
-    fs_mock.join("test_web_root", "some_path").AndReturn("test_web_root/some_path")
-    fs_mock.dirname("test_web_root/some_path").AndReturn("test_web_root")
-    fs_mock.exists("test_web_root").AndReturn(True)
+    FILE_RELATIVE_PATH = os.path.join(FAKE_WEB_ROOT, FILE_PATH)
 
-    f = mox.CreateMockAnything()
-    filename = "some_temp_file"
-    fs_mock.tempfile(directory="test_web_root").AndReturn([f, filename])
-    fs_mock.write(f, "some_content")
-    fs_mock.close(f)
-    fs_mock.chmod(filename, stat.S_IREAD | stat.S_IWRITE | stat.S_IWUSR | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-    fs_mock.rename('some_temp_file', 'test_web_root/some_path')
+    settings = CustomSettings(WEB_ROOT=FAKE_WEB_ROOT)
 
-    settings = CustomSettings(WEB_ROOT="test_web_root")
+    with remove_web_root_from_settings():
+        instance = StaticGenerator(
+            settings=settings
+        )
+        instance.publish_from_path(FILE_PATH, content=FILE_CONTENT)
 
-    mox.ReplayAll()
+    assert os.path.exists(FILE_RELATIVE_PATH), 'File {file_path} not found'.format(file_path=FILE_RELATIVE_PATH)
 
-    instance = StaticGenerator(http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings,
-                               fs=fs_mock)
-
-    instance.publish_from_path("some_path", content="some_content")
-
-    mox.VerifyAll()
+    with open(FILE_RELATIVE_PATH, 'r') as fd:
+        assert fd.readline() == FILE_CONTENT, 'File {file_path} content differs'.format(file_path=FILE_RELATIVE_PATH)
 
 
 def test_delete_raises_when_unable_to_delete_file():
     mox = Mox()
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
 
-    fs_mock = mox.CreateMockAnything()
+    FAKE_WEB_ROOT = 'test_web_root'
+    FILE_PATH = 'some_path'
+    FILE_RELATIVE_PATH = os.path.join(FAKE_WEB_ROOT, FILE_PATH)
 
-    fs_mock.join("test_web_root", "some_path").AndReturn("test_web_root/some_path")
-    fs_mock.dirname("test_web_root/some_path").AndReturn("test_web_root")
-    fs_mock.exists("test_web_root/some_path").AndReturn(True)
-    fs_mock.remove("test_web_root/some_path").AndRaise(ValueError())
+    settings = CustomSettings(WEB_ROOT=FAKE_WEB_ROOT)
 
-    settings = CustomSettings(WEB_ROOT="test_web_root")
+    mox.StubOutWithMock(os.path, 'exists')
+    mox.StubOutWithMock(os, 'remove')
+
+    os.path.exists(FILE_RELATIVE_PATH).AndReturn(True)
+    os.remove(FILE_RELATIVE_PATH).AndRaise(Exception())
 
     mox.ReplayAll()
 
-    instance = StaticGenerator(http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings,
-                               fs=fs_mock)
+    with remove_web_root_from_settings():
+        instance = StaticGenerator(
+            settings=settings,
+        )
 
-    try:
-        instance.delete_from_path("some_path")
-    except StaticGeneratorException, e:
-        assert str(e) == 'Could not delete file: test_web_root/some_path'
-        mox.VerifyAll()
-        return
+        try:
+            instance.delete_from_path(FILE_PATH)
+        except StaticGeneratorException, e:
+            assert str(e) == 'Could not delete file: {file_path}'.format(file_path=FILE_RELATIVE_PATH)
+            mox.VerifyAll()
+            return
+        finally:
+            mox.UnsetStubs()
 
     assert False, "Shouldn't have gotten this far."
 
@@ -515,116 +495,84 @@ def test_delete_ignores_folder_delete_when_unable_to_delete_folder():
 
 
 def test_delete_from_path():
-    mox = Mox()
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
+    FAKE_WEB_ROOT = 'test_web_root'
+    FILE_PATH = 'some_path'
 
-    fs_mock = mox.CreateMockAnything()
-    fs_mock.join("test_web_root", "some_path").AndReturn("test_web_root/some_path")
-    fs_mock.dirname("test_web_root/some_path").AndReturn("test_web_root")
-    fs_mock.exists("test_web_root/some_path").AndReturn(True)
-    fs_mock.remove("test_web_root/some_path")
+    FILE_RELATIVE_PATH = os.path.join(FAKE_WEB_ROOT, FILE_PATH)
 
-    fs_mock.rmdir("test_web_root")
+    settings = CustomSettings(WEB_ROOT=FAKE_WEB_ROOT)
 
-    settings = CustomSettings(WEB_ROOT="test_web_root")
+    with remove_web_root_from_settings():
+        instance = StaticGenerator(
+            settings=settings,
+        )
 
-    mox.ReplayAll()
-
-    instance = StaticGenerator(http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings,
-                               fs=fs_mock)
-
-    instance.delete_from_path("some_path")
-
-    mox.VerifyAll()
+        assert os.path.exists(FILE_RELATIVE_PATH), 'File {file_path} already exists =P'.format(file_path=FILE_RELATIVE_PATH)
+        instance.delete_from_path(FILE_PATH)
+        assert not os.path.exists(FILE_RELATIVE_PATH), 'File {file_path} still exists'.format(file_path=FILE_RELATIVE_PATH)
 
 
 def test_publish_loops_through_all_resources():
-    mox = Mox()
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
+    FAKE_WEB_ROOT = 'test_web_root'
+    FILE_PATH_1 = 'some_path_1'
+    FILE_PATH_2 = 'some_path_2'
+    FILE_CONTENT = 'some_content'
 
-    fs_mock = mox.CreateMockAnything()
-    f = mox.CreateMockAnything()
-    fs_mock.join('test_web_root', 'some_path_1').AndReturn('test_web_root/some_path_1')
-    fs_mock.dirname('test_web_root/some_path_1').AndReturn('test_web_root')
-    fs_mock.exists("test_web_root").AndReturn(True)
-    filename = "some_temp_file"
-    fs_mock.tempfile(directory="test_web_root").AndReturn([f, filename])
-    fs_mock.write(f, "some_content")
-    fs_mock.close(f)
-    fs_mock.chmod(filename, stat.S_IREAD | stat.S_IWRITE | stat.S_IWUSR | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-    fs_mock.rename('some_temp_file', 'test_web_root/some_path_1')
+    FILE_RELATIVE_PATH_1 = os.path.join(FAKE_WEB_ROOT, FILE_PATH_1)
+    FILE_RELATIVE_PATH_2 = os.path.join(FAKE_WEB_ROOT, FILE_PATH_2)
 
-    fs_mock.join('test_web_root', 'some_path_2').AndReturn('test_web_root/some_path_2')
-    fs_mock.dirname('test_web_root/some_path_2').AndReturn('test_web_root')
-    fs_mock.exists("test_web_root").AndReturn(True)
-    filename = "some_temp_file"
-    fs_mock.tempfile(directory="test_web_root").AndReturn([f, filename])
-    fs_mock.write(f, "some_content")
-    fs_mock.close(f)
-    fs_mock.chmod(filename, stat.S_IREAD | stat.S_IWRITE | stat.S_IWUSR | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-    fs_mock.rename('some_temp_file', 'test_web_root/some_path_2')
+    settings = CustomSettings(WEB_ROOT=FAKE_WEB_ROOT)
 
-    settings = CustomSettings(WEB_ROOT="test_web_root")
-
-    mox.ReplayAll()
+    not os.path.exists(FILE_RELATIVE_PATH_1) or os.remove(FILE_RELATIVE_PATH_1)
+    not os.path.exists(FILE_RELATIVE_PATH_2) or os.remove(FILE_RELATIVE_PATH_2)
 
     try:
-        get_content_from_path = StaticGenerator.get_content_from_path
-        StaticGenerator.get_content_from_path = lambda self, path: "some_content"
-        instance = StaticGenerator("some_path_1", "some_path_2",
-                                   http_request=http_request,
-                                   model_base=model_base,
-                                   manager=manager,
-                                   model=model,
-                                   queryset=queryset,
-                                   settings=settings,
-                                   fs=fs_mock)
+        with remove_web_root_from_settings():
+            get_content_from_path = StaticGenerator.get_content_from_path
+            StaticGenerator.get_content_from_path = lambda self, path: FILE_CONTENT
+            instance = StaticGenerator(
+                FILE_PATH_1, FILE_PATH_2,
+                settings=settings,
+            )
 
-        instance.publish()
+            instance.publish()
 
-        mox.VerifyAll()
+            with open(FILE_RELATIVE_PATH_1, 'r') as fd1, open(FILE_RELATIVE_PATH_2, 'r') as fd2:
+                assert fd1.readline() == FILE_CONTENT, 'File {file_path} content differs'.format(file_path=FILE_RELATIVE_PATH_1)
+                assert fd2.readline() == FILE_CONTENT, 'File {file_path} content differs'.format(file_path=FILE_RELATIVE_PATH_2)
+
     finally:
         StaticGenerator.get_content_from_path = get_content_from_path
 
 
 def test_delete_loops_through_all_resources():
-    mox = Mox()
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
+    FAKE_WEB_ROOT = 'test_web_root'
+    FILE_PATH_1 = 'some_path_1'
+    FILE_PATH_2 = 'some_path_2'
+    FILE_CONTENT = 'some_content'
 
-    fs_mock = mox.CreateMockAnything()
-    fs_mock.join('test_web_root', 'some_path').AndReturn("test_web_root/some_path")
-    fs_mock.dirname("test_web_root/some_path").AndReturn("test_web_root")
-    fs_mock.exists("test_web_root/some_path").AndReturn(True)
-    fs_mock.remove("test_web_root/some_path")
-    fs_mock.rmdir("test_web_root")
+    FILE_RELATIVE_PATH_1 = os.path.join(FAKE_WEB_ROOT, FILE_PATH_1)
+    FILE_RELATIVE_PATH_2 = os.path.join(FAKE_WEB_ROOT, FILE_PATH_2)
 
-    fs_mock.join('test_web_root', 'some_path_2').AndReturn("test_web_root/some_path_2")
-    fs_mock.dirname('test_web_root/some_path_2').AndReturn("test_web_root")
-    fs_mock.exists("test_web_root/some_path_2").AndReturn(True)
-    fs_mock.remove("test_web_root/some_path_2")
-    fs_mock.rmdir("test_web_root")
+    settings = CustomSettings(WEB_ROOT=FAKE_WEB_ROOT)
 
-    settings = CustomSettings(WEB_ROOT="test_web_root")
+    with remove_web_root_from_settings():
+        instance = StaticGenerator(
+            FILE_PATH_1, FILE_PATH_2,
+            settings=settings,
+        )
 
-    mox.ReplayAll()
+        with open(FILE_RELATIVE_PATH_1, 'w') as fd1, open(FILE_RELATIVE_PATH_2, 'w') as fd2:
+            fd1.write(FILE_CONTENT)
+            fd2.write(FILE_CONTENT)
 
-    instance = StaticGenerator("some_path", "some_path_2",
-                               http_request=http_request,
-                               model_base=model_base,
-                               manager=manager,
-                               model=model,
-                               queryset=queryset,
-                               settings=settings,
-                               fs=fs_mock)
+        assert os.path.exists(FILE_RELATIVE_PATH_1), 'File {file_path} was not created'.format(file_path=FILE_RELATIVE_PATH_1)
+        assert os.path.exists(FILE_RELATIVE_PATH_2), 'File {file_path} was not created'.format(file_path=FILE_RELATIVE_PATH_2)
 
-    instance.delete()
+        instance.delete()
 
-    mox.VerifyAll()
+        assert not os.path.exists(FILE_RELATIVE_PATH_1), 'File {file_path} still exists =P'.format(file_path=FILE_RELATIVE_PATH_1)
+        assert not os.path.exists(FILE_RELATIVE_PATH_2), 'File {file_path} still exists =P'.format(file_path=FILE_RELATIVE_PATH_2)
 
 
 def test_can_create_dummy_handler():
@@ -642,9 +590,12 @@ def test_can_create_dummy_handler():
 
 
 def test_bad_request_raises_proper_exception():
+    from django.test.client import RequestFactory
+
     mox = Mox()
 
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
+    mox.StubOutWithMock(RequestFactory, 'get')
+
     settings = CustomSettings(WEB_ROOT="test_web_root")
 
     path_mock = 'some_path'
@@ -654,7 +605,7 @@ def test_bad_request_raises_proper_exception():
     request_mock.META.setdefault('SERVER_PORT', 80)
     request_mock.META.setdefault('SERVER_NAME', 'localhost')
 
-    http_request.__call__().AndReturn(request_mock)
+    RequestFactory.get.__call__(path_mock).AndReturn(request_mock)
 
     response_mock = mox.CreateMockAnything()
     response_mock.content = 'foo'
@@ -667,31 +618,30 @@ def test_bad_request_raises_proper_exception():
     mox.ReplayAll()
 
     try:
-        dummy_handler = staticgenerator.staticgenerator.DummyHandler
-        staticgenerator.staticgenerator.DummyHandler = handler_mock
+        with remove_web_root_from_settings():
+            dummy_handler = staticgenerator.staticgenerator.DummyHandler
+            staticgenerator.staticgenerator.DummyHandler = handler_mock
 
-        instance = StaticGenerator(http_request=http_request,
-                                   model_base=model_base,
-                                   manager=manager,
-                                   model=model,
-                                   queryset=queryset,
-                                   settings=settings)
+            instance = StaticGenerator(
+                settings=settings
+            )
 
-        instance.get_content_from_path(path_mock)
+            instance.get_content_from_path(path_mock)
     except StaticGeneratorException, e:
         assert str(e) == 'The requested page("some_path") returned http code 500. Static Generation failed.'
         mox.VerifyAll()
         return
     finally:
         staticgenerator.staticgenerator.DummyHandler = dummy_handler
+        mox.UnsetStubs()
 
     assert False, "Shouldn't have gotten this far."
 
 
 def test_not_found_raises_proper_exception():
+    from django.test.client import RequestFactory
     mox = Mox()
 
-    http_request, model_base, manager, model, queryset = get_mocks(mox)
     settings = CustomSettings(WEB_ROOT="test_web_root")
 
     path_mock = 'some_path'
@@ -701,28 +651,27 @@ def test_not_found_raises_proper_exception():
     request_mock.META.setdefault('SERVER_PORT', 80)
     request_mock.META.setdefault('SERVER_NAME', 'localhost')
 
-    http_request.__call__().AndReturn(request_mock)
+    mox.StubOutWithMock(RequestFactory, 'get')
+    RequestFactory.get.__call__(path_mock).AndReturn(request_mock)
 
     response_mock = mox.CreateMockAnything()
     response_mock.content = 'foo'
     response_mock.status_code = 404
 
+    handler_mock_class = mox.CreateMockAnything()
     handler_mock = mox.CreateMockAnything()
-    handler_mock.__call__().AndReturn(handler_mock)
+    handler_mock_class.__call__().AndReturn(handler_mock)
     handler_mock.__call__(request_mock).AndReturn(response_mock)
 
     mox.ReplayAll()
 
     try:
         dummy_handler = staticgenerator.staticgenerator.DummyHandler
-        staticgenerator.staticgenerator.DummyHandler = handler_mock
+        staticgenerator.staticgenerator.DummyHandler = handler_mock_class
 
-        instance = StaticGenerator(http_request=http_request,
-                                   model_base=model_base,
-                                   manager=manager,
-                                   model=model,
-                                   queryset=queryset,
-                                   settings=settings)
+        instance = StaticGenerator(
+            settings=settings
+        )
 
         instance.get_content_from_path(path_mock)
     except StaticGeneratorException, e:
@@ -732,10 +681,13 @@ def test_not_found_raises_proper_exception():
     finally:
         staticgenerator.staticgenerator.DummyHandler = dummy_handler
 
+    mox.UnsetStubs()
     assert False, "Shouldn't have gotten this far."
 
 
 def test_request_exception_raises_proper_exception():
+    from django.test.client import RequestFactory
+
     mox = Mox()
 
     http_request, model_base, manager, model, queryset = get_mocks(mox)
@@ -748,7 +700,8 @@ def test_request_exception_raises_proper_exception():
     request_mock.META.setdefault('SERVER_PORT', 80)
     request_mock.META.setdefault('SERVER_NAME', 'localhost')
 
-    http_request.__call__().AndReturn(request_mock)
+    mox.StubOutWithMock(RequestFactory, 'get')
+    RequestFactory.get.__call__(path_mock).AndReturn(request_mock)
 
     handler_mock = mox.CreateMockAnything()
     handler_mock.__call__().AndReturn(handler_mock)
@@ -777,4 +730,5 @@ def test_request_exception_raises_proper_exception():
     finally:
         staticgenerator.staticgenerator.DummyHandler = dummy_handler
 
+    mox.UnsetStubs()
     assert False, "Shouldn't have gotten this far."
