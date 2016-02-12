@@ -50,6 +50,7 @@ class StaticGenerator(object):
         self.parse_dependencies(kw)
 
         self.resources = self.extract_resources(resources)
+        self.server_name = self.get_server_name(kw)
         self.web_root = self.get_web_root(kw)
 
     def parse_dependencies(self, kw):
@@ -98,7 +99,7 @@ class StaticGenerator(object):
 
         return extracted
 
-    def get_server_name(self):
+    def get_server_name(self, kw={}):
         '''Tries to get the server name.
         First we look in the django settings.
         If it's not found we try to get it from the current Site.
@@ -115,8 +116,14 @@ class StaticGenerator(object):
                 self.site = Site
             return self.site.objects.get_current().domain
         except:
-            print '*** Warning ***: Using "localhost" for domain name. Use django.contrib.sites or set settings.SERVER_NAME to disable this warning.'
-            return 'localhost'
+            server_name = kw['settings'].SERVER_NAME if kw.has_key('settings') and \
+                hasattr(kw['settings'], 'SERVER_NAME') else None
+
+            if not server_name:
+                print '*** Warning ***: Using "localhost" for domain name. Use django.contrib.sites or set settings.SERVER_NAME to disable this warning.'
+                return 'localhost'
+
+            return server_name
 
     def get_content_from_path(self, path):
         """
